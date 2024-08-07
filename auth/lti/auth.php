@@ -330,22 +330,40 @@ class auth_plugin_lti extends \auth_plugin_base {
      * @param array $userdata the user data coming from either a launch or membership service call.
      * @param string $iss the issuer to which the user belongs.
      * @return stdClass a complete Moodle user record.
+     * Modified by Liam Moran 9/1/2023 to use lis_person_sourcedid or custom variable instead of user_id
      */
     protected function create_new_account(array $userdata, string $iss): stdClass {
 
-        global $CFG;
+        global $CFG, $DB;
         require_once($CFG->dirroot.'/user/lib.php');
 
-        // Launches and membership calls handle the user id differently.
+        // Launches and membership calls handle the platform user id differently.
         // Launch uses 'sub', whereas member uses 'user_id'.
-        $userid = !empty($userdata['sub']) ? $userdata['sub'] : $userdata['user_id'];
+        $platformuserid = !empty($userdata['sub']) ? $userdata['sub'] : $userdata['user_id'];
 
+        $customvariableusername = 'User.username'; // Pull this from get_config('enrol_lti','customvarmappings') and parse structure
+
+        // Launches and membership calls handle the actual username differently.
+        // Launch requires a custom variable $customvariableusername for canvas, whereas member uses 'lis_person_sourcedid'.
+        if (!empty($userdata['lis_person_sourcedid'])) { // Sync_Members api call
+                $username = $userdata['lis_person_sourcedid'];
+        } elseif (isset($userdata['https://purl.imsglobal.org/spec/lti/claim/custom'][$customvariableusername])) { // Launch data
+           $username = $userdata['https://purl.imsglobal.org/spec/lti/claim/custom'][$customvariableusername];
+        } elseif (isset($userdata['message'][0]['https://purl.imsglobal.org/spec/lti/claim/custom'][$customvariableusername])) { // Corner case from sync_members api call
+           $username = $userdata['message'][0]['https://purl.imsglobal.org/spec/lti/claim/custom'][$customvariableusername];
+        } elseif (isset($userdata['https://purl.imsglobal.org/spec/lti/claim/ext']['user_username'])) { // moodle lti claim
+           $username = $userdata['https://purl.imsglobal.org/spec/lti/claim/ext']['user_username'];
+        } else { // The DB write will fail in this case, or else fall back to obfuscated username
+                $username ='';
+                //$username = 'enrol_lti_13_' . sha1($iss . '_' . $userid);
+        }
+     
         $user = new stdClass();
-        $user->username = 'enrol_lti_13_' . sha1($iss . '_' . $userid);
+        $user->username = $username; //'enrol_lti_13_' . sha1($iss . '_' . $userid);
         // If the email was stripped/not set then fill it with a default one.
         // This stops the user from being redirected to edit their profile page.
         $email = !empty($userdata['email']) ? $userdata['email'] :
-            'enrol_lti_13_' . sha1($iss . '_' . $userid) . "@example.com";
+            $username . "@example.com"; // or your expectd email domain
         $email = \core_user::clean_field($email, 'email');
         $user->email = $email;
         $user->auth = 'lti';
@@ -354,53 +372,29 @@ class auth_plugin_lti extends \auth_plugin_base {
         $user->lastname = $userdata['family_name'] ?? $iss;
         $user->password = '';
         $user->confirmed = 1;
-        $user->id = user_create_user($user, false);
+        // Some basic ad-hoc checks to ensure we don't clobber a useful service account
+        // make this configurable in auth_lti settings
+        if (!(in_array($user->username,array('admin','guest'))) and substr($user->username,0,10) !== 'su-moodle-') {
+            $existinguserid = $DB->get_field('user','id',
+                                       ['username'=>$user->username],
+                                        $strictness = IGNORE_MISSING);
+        } else {
+            // This will cause sync_members and launch to fail, but it's unclear what the right behavior is: this looks like something we want to know about
+            throw new moodle_exception('invalidusername');
+        }
+        if ($existinguserid) {
+            // If an auth_manual user with this username already exists, update that user with launch data and convert to auth_lti
+            // Do not do this if you're supporting multiple platforms with potentially identical usernames
+            $user->id = $existinguserid;
+            user_update_user($user, false);
+        } else {
+            $user->id = user_create_user($user, false);
+        }
 
         // Link this user with the LTI credentials for future use.
-        $this->create_user_binding($iss, $userid, $user->id);
+        $this->create_user_binding($iss, $platformuserid, $user->id);
 
         return (object) get_complete_user_data('id', $user->id);
-    }
-
-    /**
-     * Update the personal fields of the user account, based on data present in either a launch of member sync call.
-     *
-     * @param stdClass $user the Moodle user account to update.
-     * @param array $userdata the user data coming from either a launch or membership service call.
-     * @param string $iss the issuer to which the user belongs.
-     */
-    public function update_user_account(stdClass $user, array $userdata, string $iss): void {
-        global $CFG;
-        require_once($CFG->dirroot.'/user/lib.php');
-        if ($user->auth !== 'lti') {
-            return;
-        }
-
-        // Launches and membership calls handle the user id differently.
-        // Launch uses 'sub', whereas member uses 'user_id'.
-        $platformuserid = !empty($userdata['sub']) ? $userdata['sub'] : $userdata['user_id'];
-        $email = !empty($userdata['email']) ? $userdata['email'] :
-            'enrol_lti_13_' . sha1($iss . '_' . $platformuserid) . "@example.com";
-        $email = \core_user::clean_field($email, 'email');
-        $update = [
-            'id' => $user->id,
-            'firstname' => $userdata['given_name'] ?? $platformuserid,
-            'lastname' => $userdata['family_name'] ?? $iss,
-            'email' => $email
-        ];
-        $userfieldstocompare = array_intersect_key((array) $user, $update);
-
-        if (!empty(array_diff($update, $userfieldstocompare))) {
-            user_update_user($update); // Only update if there's a change.
-        }
-
-        if (!empty($userdata['picture'])) {
-            try {
-                $this->update_user_picture($user->id, $userdata['picture']);
-            } catch (Exception $e) {
-                debugging("Error syncing the profile picture for user '$user->id' during LTI authentication.");
-            }
-        }
     }
 
     /**

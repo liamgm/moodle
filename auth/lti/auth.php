@@ -355,7 +355,7 @@ class auth_plugin_lti extends \auth_plugin_base {
            $username = $userdata['https://purl.imsglobal.org/spec/lti/claim/ext']['user_username'];
         } else { // The DB write will fail in this case, or else fall back to obfuscated username
                 $username ='';
-                //$username = 'enrol_lti_13_' . sha1($iss . '_' . $userid);
+                //$username = 'enrol_lti_13_' . sha1($iss . '_' . $userid);$customvariableusername
         }
      
         $user = new stdClass();
@@ -396,6 +396,64 @@ class auth_plugin_lti extends \auth_plugin_base {
 
         return (object) get_complete_user_data('id', $user->id);
     }
+
+    /**
+     * Update the personal fields of the user account, based on data present in either a launch of member sync call.
+     *
+     * @param stdClass $user the Moodle user account to update.
+     * @param array $userdata the user data coming from either a launch or membership service call.
+     * @param string $iss the issuer to which the user belongs.
+     * Modified by Liam Moran 9/1/2023 to use lis_person_sourcedid instead of user_id and to update when username changes in SIS
+     */
+    protected function update_user_account(stdClass $user, array $userdata, string $iss): void {
+        global $CFG;
+        require_once($CFG->dirroot.'/user/lib.php');
+        if ($user->auth !== 'lti') {
+            return;
+        }
+
+        $customvariableusername = 'User.username'; // Pull this from get_config('enrol_lti','customvarmappings') and parse structure
+        // Launches and membership calls handle the user id differently.
+        // Launch requires a custom variable $customvariableusername, whereas member uses 'lis_person_sourcedid'.
+        if (isset($userdata['lis_person_sourcedid'])) { // Sync_Members api call
+                $username = $userdata['lis_person_sourcedid'];
+        } elseif (isset($userdata['https://purl.imsglobal.org/spec/lti/claim/custom'][$customvariableusername])) { // Launch data
+           $username = $userdata['https://purl.imsglobal.org/spec/lti/claim/custom'][$customvariableusername];
+        } elseif (isset($userdata['message'])) { // Corner case from sync_members api call
+           $username = $userdata['message'][0]['https://purl.imsglobal.org/spec/lti/claim/custom'][$customvariableusername];
+        } elseif (isset($userdata['https://purl.imsglobal.org/spec/lti/claim/ext']['user_username'])) { // moodle lti claim
+           $username = $userdata['https://purl.imsglobal.org/spec/lti/claim/ext']['user_username'];
+        } else { // The DB write will fail in this case
+                $username ='';
+                //$username = 'enrol_lti_13_' . sha1($iss . '_' . $userid);
+        }
+
+        $email = !empty($userdata['email']) ? $userdata['email'] :
+            $username . "@example.com";
+        $email = \core_user::clean_field($email, 'email');
+        $update = [
+            'id' => $user->id,
+            'username' => $username,
+            'firstname' => $userdata['given_name'] ?? $platformuserid,
+            'lastname' => $userdata['family_name'] ?? $iss,
+            'email' => $email
+        ];
+
+        $userfieldstocompare = array_intersect_key((array) $user, $update);
+
+        if (!empty(array_diff($update, $userfieldstocompare))) {
+            user_update_user($update); // Only update if there's a change.
+        }
+
+        if (!empty($userdata['picture'])) {
+            try {
+                $this->update_user_picture($user->id, $userdata['picture']);
+            } catch (Exception $e) {
+                debugging("Error syncing the profile picture for user '$user->id' during LTI authentication.");
+            }
+        }
+    }
+
 
     /**
      * Update the user's picture with the image stored at $url.

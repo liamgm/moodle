@@ -77,7 +77,7 @@ $auth = get_auth_plugin('lti');
 $auth->complete_login(
     $messagelaunch->getLaunchData(),
     new moodle_url('/enrol/lti/launch_deeplink.php', ['launchid' => $messagelaunch->getLaunchId()]),
-    auth_plugin_lti::PROVISIONING_MODE_PROMPT_EXISTING_ONLY
+    get_config('auth_lti','defaultinstructorauthmode')
 );
 
 require_login(null, false);

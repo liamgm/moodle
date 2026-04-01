@@ -278,11 +278,11 @@ class enrol_lti_plugin extends enrol_plugin {
         $assignableroles = get_assignable_roles($context);
 
         $mform->addElement('select', 'roleinstructor', get_string('roleinstructor', 'enrol_lti'), $assignableroles);
-        $mform->setDefault('roleinstructor', '3');
+        $mform->setDefault('roleinstructor', get_config('auth_lti','defaultinstructorrole'));
         $mform->addHelpButton('roleinstructor', 'roleinstructor', 'enrol_lti');
 
         $mform->addElement('select', 'rolelearner', get_string('rolelearner', 'enrol_lti'), $assignableroles);
-        $mform->setDefault('rolelearner', '5');
+        $mform->setDefault('rolelearner', get_config('auth_lti','defaultlearnerrole'));
         $mform->addHelpButton('rolelearner', 'rolelearner', 'enrol_lti');
 
         if (!$legacy) {
@@ -296,12 +296,12 @@ class enrol_lti_plugin extends enrol_plugin {
             $mform->addElement('select', 'provisioningmodeinstructor', get_string('provisioningmodeteacherlaunch', 'enrol_lti'),
                 $authmodes);
             $mform->addHelpButton('provisioningmodeinstructor', 'provisioningmode', 'enrol_lti');
-            $mform->setDefault('provisioningmodeinstructor', auth_plugin_lti::PROVISIONING_MODE_PROMPT_NEW_EXISTING);
+            $mform->setDefault('provisioningmodeinstructor', get_config('auth_lti','defaultinstructorauthmode'));
 
             $mform->addElement('select', 'provisioningmodelearner', get_string('provisioningmodestudentlaunch', 'enrol_lti'),
                 $authmodes);
             $mform->addHelpButton('provisioningmodelearner', 'provisioningmode', 'enrol_lti');
-            $mform->setDefault('provisioningmodelearner', auth_plugin_lti::PROVISIONING_MODE_AUTO_ONLY);
+            $mform->setDefault('provisioningmodelearner', get_config('auth_lti','defaultlearnerauthmode'));
         }
 
         $mform->addElement('header', 'remotesystem', get_string('remotesystem', 'enrol_lti'));

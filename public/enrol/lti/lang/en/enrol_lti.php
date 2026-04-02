@@ -65,6 +65,7 @@ $string['enrolmentfinished'] = 'Enrolment finished.';
 $string['enrolmentnotstarted'] = 'Enrolment has not started.';
 $string['enrolstartdate'] = 'Start date';
 $string['enrolstartdate_help'] = 'If enabled, users can access from this date onward only.';
+$string['errorcompletionenabled'] = 'Completion should be enabled for the course or the activity';
 $string['existingregistrationerror'] = 'A registration already exists for this issuer and client ID.';
 $string['frameembeddingnotenabled'] = 'To access the tool, please follow the link below.';
 $string['failedrequest'] = 'Failed request. Reason: {$a->reason}';

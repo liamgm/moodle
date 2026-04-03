@@ -377,6 +377,12 @@ final class sync_members_test extends \lti_advantage_testcase {
         $instructoruser = $this->lti_advantage_user_authenticates('1');
         $launchservice->user_launches_tool($instructoruser, $mocklaunch);
 
+        // Save the lastaccess value for this user
+        $ltiusers = $userrepo->find_by_resource($resource->id);
+        $lastaccess = reset($ltiusers)->get_lastaccess();
+        $this->assertTrue($lastaccess > null);
+        sleep(1);
+
         // Sync members.
         $task = $this->get_mock_task_with_users(self::get_mock_members_with_ids(range(1, 5), null, false, false));
 
@@ -423,6 +429,10 @@ final class sync_members_test extends \lti_advantage_testcase {
             $this->assertEquals($mockmember['given_name'], $user->firstname);
             $this->assertEquals($mockmember['family_name'], $user->lastname);
             $this->assertEquals($mockmember['email'], $user->email);
+            if ($ltiuser->get_sourceid() == '1') {
+                // Verify that user 1's lastaccess wasn't changed by the sync
+                $this->assertEquals($lastaccess,$ltiuser->get_lastaccess());
+            }
         }
     }
 

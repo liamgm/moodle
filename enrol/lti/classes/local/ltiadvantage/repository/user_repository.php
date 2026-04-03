@@ -149,7 +149,6 @@ class user_repository {
 
         $userrecord = $this->user_record_from_user($user);
         $ltiuserrecord = $this->lti_user_record_from_user($user);
-        $timenow = time();
         global $CFG;
         require_once($CFG->dirroot . '/user/lib.php');
         if ($exists) {
@@ -173,7 +172,6 @@ class user_repository {
             }
             unset($userrecord->id);
 
-            $ltiuserrecord->timemodified = $timenow;
             $DB->update_record($this->ltiuserstable, $ltiuserrecord);
         } else {
             // Validate uniqueness of the lti user, in the case of a stale object coming in to be saved.
@@ -195,7 +193,7 @@ class user_repository {
             unset($userrecord->id);
 
             // Create the lti_user record, holding details that have a lifespan equal to that of the enrolment instance.
-            $ltiuserrecord->timecreated = $ltiuserrecord->timemodified = $timenow;
+            $ltiuserrecord->timecreated = time();
             $ltiuserrecord->userid = $userid;
             $ltiuserrecord->id = $DB->insert_record($this->ltiuserstable, $ltiuserrecord);
         }

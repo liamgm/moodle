@@ -350,7 +350,6 @@ class sync_members extends scheduled_task {
                 $resource->maildisplay
             );
         }
-        $ltiuser->set_lastaccess(time());
         return $ltiuser;
     }
 
